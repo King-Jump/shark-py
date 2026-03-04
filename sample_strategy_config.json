@@ -1,0 +1,108 @@
+[
+  {
+    "api_key": "your_api_key",
+    "api_secret": "your_api_secret",
+    "passphrase": "your_passphrase",
+    "exchange": 1,
+    "follow_exchange": 1,
+    "follow_frequency": 1,
+    "follow_price": 10000,
+    "follow_symbol": "BTC/USDT",
+    "follow_downside_beta": 0.1,
+    "follow_upside_beta": 0.1,
+    "ipo_price": 10000,
+    "maker_type": "PIVOT",
+    "name": "follow_maker",
+    "price_decimals": 2,
+    "qty_decimals": 4,
+    "price_factor": 0,
+    "price_range": 100,
+    "start_time": "2024-01-01 00:00:00",
+    "strategy_id": 1,
+    "symbol": "ETH/USDT",
+    "term_id": 1,
+    "term_type": "SPOT",
+    "version": 1,
+    "far_end": {
+      "order_frequency": 1000,
+      "strategy_type": "manual",
+      "side": "BOTH",
+      "side_buy": {
+        "amount": 100,
+        "base_margin": 10,
+        "base_type": "BPS",
+        "level_margin": 5,
+        "level_type": "BPS",
+        "size": 5,
+        "step_size": 0.01,
+        "time_in_force": "GTX",
+        "total_amount": 500
+      },
+      "side_sell": {
+        "amount": 100,
+        "base_margin": 10,
+        "base_type": "BPS",
+        "level_margin": 5,
+        "level_type": "BPS",
+        "size": 5,
+        "step_size": 0.01,
+        "time_in_force": "GTX",
+        "total_amount": 500
+      }
+    },
+    "near_end": {
+      "order_frequency": 500,
+      "strategy_type": "manual",
+      "side": "BOTH",
+      "side_buy": {
+        "amount": 50,
+        "base_margin": 5,
+        "base_type": "BPS",
+        "level_margin": 2,
+        "level_type": "BPS",
+        "size": 3,
+        "step_size": 0.01,
+        "time_in_force": "GTX",
+        "total_amount": 200
+      },
+      "side_sell": {
+        "amount": 50,
+        "base_margin": 5,
+        "base_type": "BPS",
+        "level_margin": 2,
+        "level_type": "BPS",
+        "size": 3,
+        "step_size": 0.01,
+        "time_in_force": "GTX",
+        "total_amount": 200
+      }
+    },
+    "nearest_end": {
+      "order_frequency": 200,
+      "strategy_type": "manual",
+      "side": "BOTH",
+      "side_buy": {
+        "amount": 20,
+        "base_margin": 2,
+        "base_type": "BPS",
+        "level_margin": 1,
+        "level_type": "BPS",
+        "size": 2,
+        "step_size": 0.01,
+        "time_in_force": "GTX",
+        "total_amount": 100
+      },
+      "side_sell": {
+        "amount": 20,
+        "base_margin": 2,
+        "base_type": "BPS",
+        "level_margin": 1,
+        "level_type": "BPS",
+        "size": 2,
+        "step_size": 0.01,
+        "time_in_force": "GTX",
+        "total_amount": 100
+      }
+    }
+  }
+]
