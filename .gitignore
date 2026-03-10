@@ -114,3 +114,7 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# design documents
+design/
+.trae/
