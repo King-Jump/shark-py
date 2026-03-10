@@ -118,3 +118,7 @@ cython_debug/
 # design documents
 design/
 .trae/
+
+# Chinese documentation
+README(chinese).md
+docs/*(chinese).md
