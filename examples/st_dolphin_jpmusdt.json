@@ -1,0 +1,29 @@
+[
+    {
+        "api_key": "your api key",
+        "api_secret": "your api secret",
+        "buy_order_rate": 40,
+        "exchange": 10011,
+        "large_amount": 800,
+        "large_float_range": 0.5,
+        "large_frequency": 55,
+        "middle_amount": 250,
+        "middle_float_range": 0.35,
+        "middle_frequency": 23,
+        "name": "self_trade",
+        "prevention_rate": 3,
+        "price_decimals": 4,
+        "qty_decimals": 0,
+        "small_amount": 100,
+        "small_float_range": 0.22,
+        "small_frequency": 4,
+        "start_time": "",
+        "strategy_id": 25,
+        "symbol": "JPMUSDT",
+        "symbol_address": "",
+        "term_id": 13,
+        "term_type": "SPOT",
+        "trade_type": "MOCK",
+        "version": 11
+    }
+]

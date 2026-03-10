@@ -12,36 +12,28 @@ import asyncio
 import logging
 import traceback
 import random
-import json
 from logging import Logger
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from pydantic import (
-    BaseModel, PositiveInt, NonNegativeInt, PositiveFloat, ValidationError, Field
+    ValidationError
 )
 
 SRV_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if SRV_PATH not in sys.path:
     sys.path.insert(0, SRV_PATH)
-OCTOPUS_PATH = os.path.join(os.path.dirname(SRV_PATH), 'octopus-py')
-if OCTOPUS_PATH not in sys.path:
-    sys.path.insert(0, OCTOPUS_PATH)
 
 from utils.log_util import create_logger
-from utils.config_util import load_config
+from utils.config_util import load_config, load_config_str
 from utils.db_util import set_dict
-from octopuspy import NewOrder, OrderID, ORDER_STATE_CONSTANTS
-from octopuspy.exchange.helper import get_private_client, get_market_client
-from strategy.liquidity import gen_amt_dist
-from sharkpy.management.follow_maker_strategy import (
-    NEAR_END, FAR_END, NEAREST_END,
-    SideStrategy, LevelStrategy, FollowMakerStrategy
-)
+from exchange.base_restapi import NewOrder, OrderID, ORDER_STATE_CONSTANTS
+from exchange.helper import get_private_client, get_market_client
+from sharkpy.liquidity.liquidity import gen_amt_dist
+from sharkpy.management.follow_maker_strategy import SideStrategy, LevelStrategy, FollowMakerStrategy, NEAR_END, FAR_END, NEAREST_END
 
 BJ_TZ = timezone(timedelta(hours=8))
 LOG_NAME = 'FollowMaker'
-
-
+    
 def _mix(ask_orders: list[NewOrder], bid_orders: list[NewOrder]) -> list[NewOrder]:
     """ Mix orders
     """
@@ -80,7 +72,7 @@ def put_new_orders(
         logger.info("strategy id [%s] has no strtegy of [%s]", strategy_id, level)
         return []
 
-    side = level_strategy.side # Order direction
+    side = level_strategy.side # Order placement direction
     # Spot or futures
     is_spot = param.term_type == "SPOT"
     # Contract size
@@ -185,7 +177,10 @@ def put_new_orders(
                         price=str(price),
                         biz_type='SPOT',
                         tif='GTX' if tif == 'BAIT' else tif,
-                        position_side=''
+                        reduce_only=False,
+                        position_side='',
+                        bait=tif == 'BAIT',
+                        selftrade_enabled=True,
                     )
                 else: # future
                     _quantigy = str(int((buy_qty * leverage ) / contract_size))
@@ -198,7 +193,10 @@ def put_new_orders(
                         price=str(price),
                         biz_type='FUTURE',
                         tif='GTX' if tif == 'BAIT' else tif,
-                        position_side='LONG'
+                        reduce_only=False,
+                        position_side='LONG',
+                        bait=tif == 'BAIT',
+                        selftrade_enabled=True,
                     )
                 new_bid_orders.append(order)
                 logger.debug("new [BUY] order of size [%s] at price [%s], level_amt [%s]",
@@ -224,7 +222,7 @@ def check_and_cancel(
 ) -> bool:
     """ 
     1. Check the status of this round of orders, and if it is NEW, cancel the order
-    --In order to improve the efficiency of order placement, giving up checking the order placement status may result in an empty market
+    --In order to improve the efficiency of order placement, giving up checking the order placement status may result in an empty order book
     2. Cancel the previous round of orders
     """
     # 2. Cancel previous orders
@@ -439,7 +437,7 @@ def pivot_making_price(strategy: FollowMakerStrategy, client, prev_maker_strateg
 
     _set_monitor_redis(project_id=strategy.term_id,
                        exchange=strategy.exchange,
-                       symbol=strategy.symbol,
+                       symbol=symbol,
                        pivot=pivot,
                        logger=logger)
     fl_buy_price, fl_sell_price = _cal_level_price_by_spread(strategy=strategy,
@@ -524,7 +522,7 @@ def trade_making_price(strategy: FollowMakerStrategy, client, prev_maker_strateg
 
 async def market_making(client, market_client, strategy: FollowMakerStrategy, level: str) -> str:
     """ 
-    # Lay first and withdraw later to avoid a bearish market trend
+    # Place orders first and cancel later to avoid a bearish market trend
     # The key is to determine the central price for this round of orders
     """
     logger = logging.getLogger(LOG_NAME)
@@ -633,13 +631,13 @@ async def market_making(client, market_client, strategy: FollowMakerStrategy, le
         logger.error(traceback.format_exc())
         return str(e)
 
+
 class TrackMaker:
     """ Market Maker Agent
     """
-    __slots__ = ('filename', 'redis_key', 'config_version', 'logger', '_market_clients', '_trade_clients')
-    def __init__(self, filename: str, redis_key: str, logger: Logger):
-        self.config_file = filename
-        self.redis_key = redis_key
+    __slots__ = ('config_key', 'config_version', 'logger', '_market_clients', '_trade_clients')
+    def __init__(self, config_key: str, logger: Logger):
+        self.config_key = config_key
         self.config_version = 0
         self.logger = logger
 
@@ -713,7 +711,7 @@ class TrackMaker:
             
     def update_strategy_config(self, strategy_configs:dict):
         """
-        update making strategies with values stored in file
+        update making strategies with values stored in redis
         :return: False - some error, True - no error
         :rtype: bool
         """
@@ -755,7 +753,7 @@ class TrackMaker:
                 if strategy.nearest_end and not new_strategy_configs[sid].nearest_end:
                     self._remove_strategy_level(strategy, NEAREST_END)
                     self.logger.info('Remove old strategy %s, old level %s', sid, NEAREST_END)
-                # Save strategy-dependent intermediate state
+                # 保存策略依赖的中间状态
                 if strategy.prev_maker_type:
                     new_strategy_configs[sid].prev_maker_type = strategy.prev_maker_type
         self.config_version = new_version
@@ -786,7 +784,7 @@ class TrackMaker:
                 # create a private client to put/cancel orders
                 self._trade_clients[api_key] = get_private_client(exchange, api_key,
                     strategy.api_secret, passphrase=strategy.passphrase, logger=self.logger,
-                    category=strategy.term_type)    # strategy.term_type default value SPOT
+                    category=strategy.term_type)    # strategy.term_type 默认值 SPOT
             client = self._trade_clients[api_key]
 
             # Initiate marketing client, get marketing data through restful api.
@@ -808,7 +806,7 @@ class TrackMaker:
                 _op_ts.get(f'{sid}{NEAREST_END}', 0.0) + 0.001 * float(strategy.nearest_end.order_frequency) < ts:
                     tasks.append(asyncio.create_task(market_making(client, market_client, strategy, NEAREST_END)))
                     _op_ts[f'{sid}{NEAREST_END}'] = ts
-        return tasks
+            return tasks
                     
                     
     async def run_forever(self):
@@ -818,36 +816,13 @@ class TrackMaker:
         strategy_configs: {sid: FollowMakerStrategy} where sid as index
         """
         _op_ts = {'config': 0.0}    # the timestamp of last operation
-        # Initial load from file
-        try:
-            config_file = self.config_file
-            if not os.path.exists(config_file):
-                self.logger.error("Config file not found: %s", config_file)
-                strategy_configs = {}
-            else:
-                with open(config_file, 'r', encoding='utf-8') as f:
-                    _file_configs = json.load(f)
-                new_configs = [FollowMakerStrategy(**item) for item in _file_configs]
-                strategy_configs = {}
-                for item in new_configs:
-                    if item.far_end:
-                        self.set_level_side(item.far_end)
-                    if item.near_end:
-                        self.set_level_side(item.near_end)
-                    if item.nearest_end:
-                        self.set_level_side(item.nearest_end)
-                    strategy_configs[str(item.strategy_id)] = item
-                self.config_version = 1
-                self.logger.info("Initial config loaded from file: %s", config_file)
-        except Exception as e:
-            self.logger.error("Failed to load initial config: %s", e)
-            strategy_configs = {}
+        strategy_configs = {}
         while 1:
             try:
                 ts = time.time()
-                # 1. Update config
+                # 1. Update config from redis
                 if _op_ts['config'] + 5 < ts:
-                    # None: reading or parsing object failed, not changed
+                    # None: reading redis or parsing object failed, not changed
                     # !None: strategy_configs renewed
                     new_strategy_configs = self.update_strategy_config(strategy_configs)
                     if new_strategy_configs:
@@ -863,17 +838,15 @@ class TrackMaker:
             except Exception:
                 self.logger.error(traceback.format_exc())
 
-def main(filename: str, redis_key: str = None):
+def main(config_key: str):
     """ Start TrackMaker agent
     """
-    logger = create_logger(SRV_PATH, f'track_maker_{os.path.basename(filename)}.log', LOG_NAME)
-    with TrackMaker(filename, redis_key, logger) as agent:
+    logger = create_logger(SRV_PATH, f'track_maker_{config_key}.log', LOG_NAME)
+    with TrackMaker(config_key, logger) as agent:
         asyncio.run(agent.run_forever())
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print(f"python {sys.argv[0]} <config_file_name> [config_redis_key]")
+        print(f"python {sys.argv[0]} <config_key>")
         sys.exit(1)
-    filename = sys.argv[1]
-    redis_key = sys.argv[2] if len(sys.argv) > 2 else None
-    main(filename, redis_key)
+    main(sys.argv[1])
